@@ -2,3 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+
+
+#' Ignore the following folders
+/Data/*/*
