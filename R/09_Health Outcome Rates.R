@@ -1,19 +1,13 @@
 #' =============================================================================
-#' Project: ECHO Aim 1 
-#' Date created: May 22, 2018
+#' Date created: January 14, 2019
 #' Author: Sheena Martenies
 #' Contact: Sheena.Martenies@colostate.edu
 #' 
 #' Description:
-#' 
-#' This project examines the relationships between spatially-distributed
-#' economic, environmental, and social variables and health outcomes meausred
-#' in the Healthy Start cohort (UC Denver)
-#' 
 #' This script summarizes the mortality and hospitalization rates for the 
 #' study area.
 #' 
-#' Follows methods used by CalEnviroScreen: 
+#' Follows methods used by CalEnviroScreen 3.0: 
 #'      ZIP codes -> census blocks -> census tracts
 #' 
 #' NOTE: don't forget the ./ before the directory when reading in files!
@@ -31,27 +25,6 @@ library(lubridate)
 library(readxl)
 library(viridis)
 
-#' For ggplots
-simple_theme <- theme(
-  #aspect.ratio = 1,
-  text  = element_text(family="Calibri",size = 12, color = 'black'),
-  panel.spacing.y = unit(0,"cm"),
-  panel.spacing.x = unit(0.25, "lines"),
-  panel.grid.minor = element_line(color = "transparent"),
-  panel.grid.major = element_line(color = "transparent"),
-  panel.border=element_rect(fill = NA),
-  panel.background=element_blank(),
-  axis.ticks = element_line(colour = "black"),
-  axis.text = element_text(color = "black", size=10),
-  # legend.position = c(0.1,0.1),
-  plot.margin=grid::unit(c(0,0,0,0), "mm"),
-  legend.key = element_blank()
-)
-windowsFonts(Calibri=windowsFont("TT Calibri"))
-options(scipen = 9999) #avoid scientific notation
-
-geo_data <- "T:/Rsch-MRS/ECHO/SEM Large Data/Spatial Data/"
-utm_13 <- "+init=epsg:26913"
 albers <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
 ll_nad83 <- "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0"
 ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
@@ -84,7 +57,7 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' -----------------------------------------------------------------------------
 
 hosp_path <- "U:/Research/2017_ALA_HIA/Data/CHA Data/co_hosp_w_outcome_df.csv"
-co_hosp <- read.csv(hosp_path, header=T, stringsAsFactors = F) %>%
+co_hosp <- read_csv(hosp_path) %>%
   mutate(county_final = ifelse(county_geo == "014" & county_final == "159", 
                                "014", county_final),
          FIPS = paste("08", county_final, sep=""),
@@ -106,7 +79,7 @@ co_hosp$age_cat <- as.character(co_hosp$age_cat)
 head(co_hosp[,c("AGEYRS", "age_cat")])
 
 #' ZCTA Populations (estimated as part of the ALA HIA)
-zip_pop <- read.csv("./Data/ACS_2010_2014/co_populations.csv") %>%
+zip_pop <- read_csv(here::here("Data/ACS_Data", "co_populations.csv")) %>%
   rename(ZIP = GEOID) %>%
   mutate(ZIP = as.character(ZIP),
          p1_4 = p0_4 - p0_1) %>%
@@ -118,7 +91,7 @@ zip_pop <- read.csv("./Data/ACS_2010_2014/co_populations.csv") %>%
 
 #' standard populations (2000 US Population, 19 age groups)
 #' Data dictionary: https://seer.cancer.gov/stdpopulations/stdpopdic.html
-std_pop <- read.table("./Data/ACS_2010_2014/stdpop.19ages.txt", header=F) %>%
+std_pop <- read_table(here::here("Data/ACS_Data", "stdpop.19ages.txt")) %>%
   mutate(Standard = as.numeric(substr(V1, start=1, stop=3)),
          age_group = as.numeric(substr(V1, start=4, stop=6)),
          std_pop_mil = as.numeric(substr(V1, start=7, stop=8))) %>%
@@ -165,23 +138,15 @@ zip_rate_adj <- zip_rate_crude %>%
             res_rate_adj = sum(res_adj),
             cpm_rate_adj = sum(cpm_adj))
 
-save(zip_rate_adj, file="./Data/CHA Data/age-adjusted rates ZCTA.RData")
-
 summary(zip_rate_crude)
 summary(zip_rate_adj)
-
 
 #' -----------------------------------------------------------------------------
 #' Next, assign census blocks a ZCTA rate and then calculate a population-
 #' weighted average rate for the census tracts
 #' -----------------------------------------------------------------------------
 
-# load("./Data/Spatial Data/dm_tracts.RData")
-# boundary <- st_make_grid(dm_tracts, n=1) %>%
-#   st_buffer(., dist = 2000)
-
-blocks <- st_read(paste(geo_data, "tabblock2010_08_pophu.shp", sep=""),
-                  stringsAsFactors = F) %>%
+blocks <- st_read(here::here("Data/ACS_Data", "tabblock2010_08_pophu.shp")) %>%
   st_transform(crs=albers) %>%
   select(BLOCKID10, POP10) %>%
   rename(BLOCK = BLOCKID10, pop = POP10)
@@ -193,29 +158,36 @@ head(block_centroids)
 # plot(st_geometry(blocks), border="red", fill=NA)
 # plot(st_geometry(block_centroids), col="blue", add=T)
 
-tracts <- st_read(paste(geo_data, "tl_2014_08_tract.shp", sep=""),
-                  stringsAsFactors = F) %>%
-  st_transform(crs=albers) %>%
-  select(GEOID) %>%
+#' Specify the geodatabase name and output name
+tract_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
+tract_output_name <- str_replace(tract_gdb_name, ".gdb", ".csv")
+
+#' get shapefile and project to Albers Equal Area
+tracts <- st_read(dsn = here::here("Data/ACS_Data", tract_gdb_name),
+                     layer = str_remove(tract_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers) %>% 
   rename(TRACT = GEOID)
+plot(st_geometry(tracts))
 
 plot(st_geometry(blocks), col=NA, border="blue")
 plot(st_geometry(tracts), col=NA, border="red", add=T)
 
-zcta <- st_read(paste(geo_data, "ACS_2014_5YR_ZCTA.shp", sep=""),
-                stringsAsFactors = F) %>%
-  st_transform(crs=albers) %>%
-  select(ZCTA5CE10) %>%
-  rename(ZIP = ZCTA5CE10)
-head(zcta)
+zcta_gdb_name <- "ACS_2014_5YR_ZCTA_08_COLORADO.gdb"
+zcta_output_name <- str_replace(zcta_gdb_name, ".gdb", ".csv")
+
+#' get shapefile and project to Albers Equal Area
+zctas <- st_read(dsn = here::here("Data/ACS_Data", zcta_gdb_name),
+                 layer = str_remove(zcta_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers) %>% 
+  rename(ZCTA = TRACT)
+plot(st_geometry(zcta))
 
 #' Join census block centroids (with population), tracts, and ZCTA
 btz <- block_centroids %>%
   st_join(tracts) %>%
-  st_join(zcta) %>%
+  st_join(zctas) %>%
   st_set_geometry(NULL)
 
-load("./Data/CHA Data/age-adjusted rates ZCTA.RData")
 
 #' Join rates to census blocks by ZCTA ID
 btz <- left_join(btz, zip_rate_adj, by="ZIP")
@@ -251,44 +223,6 @@ co_tracts <- select(co_tracts, GEOID)
 
 hosp_rates <- left_join(co_tracts, hosp_rates, by="GEOID")
 
-save(hosp_rates, file="./Data/Spatial Data/hospitalization_rates.RData")
-
-#' -----------------------------------------------------------------------------
-#' Map the hospitalization rates
-#' -----------------------------------------------------------------------------
-
-ggplot() +
-  ggtitle("CVD Hospitalizations per 10,000") +
-  geom_sf(data = hosp_rates, aes(fill = cvd_rate_adj), col=NA) +
-  scale_fill_viridis(name = "Hospitalization\nRate per 10,000",
-                     option = "C") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-
-ggsave(filename = paste("./Figures/CEI Figures/Hospitalization/CVD Rates per 10,000.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("Respiratory Hospitalizations per 10,000") +
-  geom_sf(data = hosp_rates, aes(fill = cvd_rate_adj), col=NA) +
-  scale_fill_viridis(name = "Hospitalization\nRate per 10,000",
-                     option = "C") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-
-ggsave(filename = paste("./Figures/CEI Figures/Hospitalization/RES Rates per 10,000.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("Cardiopulmonary Hospitalizations per 10,000") +
-  geom_sf(data = hosp_rates, aes(fill = cvd_rate_adj), col=NA) +
-  scale_fill_viridis(name = "Hospitalization\nRate per 10,000",
-                     option = "C") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-
-ggsave(filename = paste("./Figures/CEI Figures/Hospitalization/CPM Rates per 10,000.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
+hosp_rates_name <- "Hospitalizations_AEA.csv"
+st_write(hosp_rates, here::here("Data", hosp_rates_name),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)

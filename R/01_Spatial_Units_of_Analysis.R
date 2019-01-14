@@ -56,81 +56,18 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' Census tract shapefiles and spatial objects for R
 #' =============================================================================
 
-#' Denver Metro counties: Adams (001), Arapahoe (005), Boulder (013), Broomfield
-#' (014), Denver (031), Douglas (035), Jefferson (059), Larimer (069), Weld (123)  
+#' Specify the geodatabase name and output name
+acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
+acs_output_name <- str_replace(acs_gdb_name, ".gdb", ".csv")
 
-# metro <- c("001", "005", "013", "014", "031", "035", "059", "069", "123")
-
-#' Colorado Census Tracts
-co_tracts <- st_read(paste(geo_data, "tl_2014_08_tract.shp", sep=""),
-                     stringsAsFactors = F) %>%
+#' get shapefile and project to Albers Equal Area
+acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
   st_transform(crs=albers)
-plot(st_geometry(co_tracts))
-save(co_tracts, file="./Data/Spatial Data/co_tracts.RData")
+plot(st_geometry(acs_units))
 
-#' Colorado block groups
-co_bgroups <- st_read(paste(geo_data, "ACS_2014_5YR_BG_08_Colorado.shp", sep=""),
-                     stringsAsFactors = F) %>%
-  st_transform(crs=albers)
-plot(st_geometry(co_bgroups))
-save(co_bgroups, file="./Data/Spatial Data/co_bgroups.RData")
-
-#' Union
-co_bound <- st_union(co_tracts)
-plot(st_geometry(co_tracts))
-plot(st_geometry(co_bound), border="red", add=T)
-save(co_bound, file="./Data/Spatial Data/co_bound.RData")
-
-#' Centroids
-co_cent <- st_centroid(co_tracts)
-plot(st_geometry(co_tracts))
-plot(st_geometry(co_bound), border="red", add=T)
-plot(st_geometry(co_cent), col="blue", add=T)
-save(co_cent, file="./Data/Spatial Data/co_centroids.RData")
-
-#' Denver Metro Census Tracts (just Denver, Adams, and Arapahoe counties)
-#' Denver Metro Block Groups
-metro <- c("001", "005", "031")
-
-dm_tracts <- co_tracts[which(co_tracts$COUNTYFP %in% metro),]
-plot(st_geometry(dm_tracts))
-save(dm_tracts, file="./Data/Spatial Data/dm_tracts.RData")
-
-metro2 <- c("001", "005", "013", "014", "031", "035", "059", "069", "123")
-dm_bgroups <- co_bgroups[which(co_bgroups$COUNTYFP %in% metro2),]
-plot(st_geometry(dm_bgroups))
-save(dm_bgroups, file="./Data/Spatial Data/dm_bgroups.RData")
-
-#' Union
-dm_bound <- st_union(dm_tracts)
-plot(st_geometry(dm_tracts))
-plot(st_geometry(dm_bound), border="red", add=T)
-save(dm_bound, file="./Data/Spatial Data/dm_bound.RData")
-
-#' Centroids
-dm_cent <- st_centroid(dm_tracts)
-plot(st_geometry(dm_tracts))
-plot(st_geometry(dm_bound), border="red", add=T)
-plot(st_geometry(dm_cent), col="blue", add=T)
-save(dm_cent, file="./Data/Spatial Data/dm_centroids.RData")
-
-#' -----------------------------------------------------------------------------
-#' Generate map of the study area
-#' -----------------------------------------------------------------------------
-
-map_bbox <- st_bbox(st_transform(dm_bound, ll_wgs84))
-base_map <- get_map(location="Bennett, CO", maptype="roadmap",
-                    source="google", zoom=9)
-# save(base_map, file="./Data/Spatial Data/google base map.RData")
-# load("./Data/Spatial Data/google base map.RData")
-
-ggmap(base_map) +
-  ggtitle("Study Area Boundary") +
-  geom_sf(data=st_sf(st_transform(dm_bound, ll_wgs84)), 
-          inherit.aes = F, color="black", fill=NA, size=1) +
-  simple_theme
-ggsave(filename = "./Figures/Study Boundaries.jpeg", device = "jpeg",
-       dpi = 600)
+st_write(acs_units, here::here("Data", acs_output_name),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
 
 
 

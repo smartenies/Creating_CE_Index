@@ -31,7 +31,7 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 #' Specify the geodatabase name and output name
 acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
-acs_output_name <- str_replace(acs_gdb_name, ".gdb", ".csv")
+acs_output_name <- ("ACS_AEA.csv")
 
 #' get shapefile and project to Albers Equal Area
 acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
