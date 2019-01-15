@@ -23,12 +23,13 @@ albers <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 
 ll_nad83 <- "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0"
 ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
-
 #' -----------------------------------------------------------------------------
 #' Read in the TRI data for CO 2010-2014
 #' Downloaded from https://www.epa.gov/toxics-release-inventory-tri-program/tri-basic-data-files-calendar-years-1987-2016
 #' Data Dictionary: https://www.epa.gov/sites/production/files/2016-11/documents/tri_basic_data_file_format_v15.pdf
 #' -----------------------------------------------------------------------------
+
+tri_output_name <- "TRI_Data_AEA.csv"
 
 tri_2010 <- read.csv("./Data/TRI_Data/TRI_2010_CO.csv", header=T,
                      stringsAsFactors = F)
@@ -78,5 +79,5 @@ tri_by_facility <- tri %>%
   summarize(total_ppy = sum(TOTAL_LBS),
             total_tpy = sum(TOTAL_TONS)) 
   
-st_write(tri_by_facility, here::here("Data", "TRI_Data_AEA.csv"),
+st_write(tri_by_facility, here::here("Data", tri_output_name),
          layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)

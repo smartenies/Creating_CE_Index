@@ -26,15 +26,14 @@ ll_nad83 <- "+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0"
 ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 #' -----------------------------------------------------------------------------
-#' Read in crime data from Michigan ICPSR, subset to metro counties, and combine 
-#' into a single df
+#' Read in crime data from Michigan ICPSR
 #' Variable names are different for 2013 and 2014, so there are two loops
 #' 
 #' NOTE: The files read in as part of this loop were generated from the SAS 
 #' programs provided by ICPSR
 #' -----------------------------------------------------------------------------
 
-crime_output_name <- "temp_crime.csv"
+crime_output_name <- "Crime_Rates_AEA.csv"
 
 years <- c("2010", "2011", "2012")
 crime <- data.frame()
@@ -191,11 +190,13 @@ summary(crime_rate)
 #' Assign crime rates to spatial units
 #' Need crosswalk: https://www.icpsr.umich.edu/icpsrweb/NACJD/series/366
 #' 
+#' The crosswalk is available in R
+#' 
 #' 
 #' -----------------------------------------------------------------------------
 
+load(here::here("Data/FBI_Data/ICPSR_35158/DS0001", "35158-0001-Data.rda"))
 
 
 
-write_csv(crime_rate, here::here("Data", crime_output_name))
 

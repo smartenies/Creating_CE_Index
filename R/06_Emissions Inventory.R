@@ -34,6 +34,18 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' -----------------------------------------------------------------------------
 
 nei_inventory_name <- "2014v2facilities.csv"
+nei_output_name <- "NEI_2014v2_AEA.csv"
+
+#' Get shapefile and project to Albers Equal Area
+#' Depending on the study area, will need to change this
+acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
+spatial_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                         layer = str_remove(acs_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers)
+plot(st_geometry(spatial_units))
+
+#' 10 km buffer around the grid (to account for buffers around monitoring pts)
+spatial_bound <- st_buffer(st_union(spatial_units), dist = 10000)
 
 nei <- read_csv(here::here("Data/NEI_Data", nei_inventory_name)) %>% 
   
@@ -49,7 +61,8 @@ nei2 <- filter(nei, pollutant_cd %in% caps) %>%
   filter(!is.na(longitude_msr)) %>% 
   st_as_sf(., coords = c("longitude_msr", "latitude_msr"), crs = ll_wgs84) %>% 
   st_transform(crs = albers)
-nei2 <- nei2[grid_bound,]
+
+nei2 <- nei2[spatial_bound ,]
 plot(st_geometry(nei2))
 
 #' Is this a major source for that pollutant?
@@ -71,6 +84,6 @@ legend("right", legend = c("1" = "Major Source (2014 Thresholds)",
                            "2" = "Non-major Source"), 
        col = 1:2, cex = 0.8, pch = 16, title = "Source Category")
 
-st_write(nei2, here::here("Data", "NEI_2014v2_AEA.csv"),
+st_write(nei2, here::here("Data", nei_output_name),
          layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
 

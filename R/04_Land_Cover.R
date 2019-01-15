@@ -26,9 +26,8 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' Tree cover, impervious surfaces
 #' -----------------------------------------------------------------------------
 
-
 #' Get shapefile and project to Albers Equal Area
-#' Depending on the study area, may need to change this
+#' Depending on the study area, will need to change this
 acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
 spatial_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
                          layer = str_remove(acs_gdb_name, ".gdb")) %>%

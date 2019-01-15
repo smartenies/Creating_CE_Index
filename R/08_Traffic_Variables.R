@@ -41,17 +41,16 @@ boundary <- st_make_grid(acs_units, n=1) %>%
   st_buffer(., dist = 2000)
 
 #' Read in NHPS 2014 shapefile, project to Albers equal area, clip to grid
-nhpms_name <- "Colorado_Sections_2014.shp"
+nhpms_name <- "Colorado.shp"
 
 nhpms_f <- st_read(here::here("Data/Traffic_Data", nhpms_name)) %>% 
   st_zm(., drop = T)
 #plot(st_geometry(nhpms_f))
 
 nhpms <- st_transform(nhpms_f, crs=albers) %>%
-  st_crop(., st_bbox(grid_bound)) %>% 
-  mutate(f_system = as.numeric(F_System),
-         aadt = as.numeric(AADT)) %>% 
-  select(-c(F_System, AADT))
+  st_crop(., st_bbox(boundary)) %>% 
+  mutate(f_system = as.numeric(f_system),
+         aadt = as.numeric(aadt))
 
 plot(st_geometry(nhpms))
 

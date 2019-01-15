@@ -56,12 +56,17 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' -----------------------------------------------------------------------------
 #' Create the data frame to hold all of the census tract variables
 
-load("./Data/Spatial Data/dm_tracts.RData")
-ct_env <- select(dm_tracts, GEOID) %>%
-  arrange(GEOID) %>%
-  mutate(area_km2 = as.vector(unclass(st_area(.)) / (1000^2)))
+acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
 
-rm(dm_tracts)
+acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers)
+plot(st_geometry(acs_units))
+
+ct_env <- acs_units %>% 
+  mutate(area_km2 = as.vector(unclass(st_area(.))) / 1000^2)
+
+rm(acs_units)
 #' -----------------------------------------------------------------------------
 
 #' Function for doughnut buffers
@@ -90,8 +95,8 @@ doughnut <- function(poly, outer, inner) {
 ct_sp <- as(ct_env, "Spatial")
 ct_sp@data$area_km2 <- NULL
 
-tree_cover <- raster("./Data/Spatial Data/tree_cover.grd")
-impervious <- raster("./Data/Spatial Data/impervious.grd")
+tree_cover <- raster(here::here("Data", "Tree_cover_AEA.tif"))
+impervious <- raster(here::here("Data", "Impervious_AEA.tif"))
 
 ct_sp$pct_tree_cover <- raster::extract(tree_cover, ct_sp, fun=mean, na.rm=T)[,1]
 ct_sp$pct_impervious <- raster::extract(impervious, ct_sp, fun=mean, na.rm=T)[,1]
@@ -99,36 +104,15 @@ ct_sp$pct_impervious <- raster::extract(impervious, ct_sp, fun=mean, na.rm=T)[,1
 ct_sp <- as.data.frame(ct_sp) 
 
 ct_env <- left_join(ct_env, ct_sp, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Percent tree cover") +
-  geom_sf(data = ct_env, aes(fill = pct_tree_cover), col=NA) +
-  scale_fill_viridis(name = "Percent") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/tree cover.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("Percent impervious surface") +
-  geom_sf(data = ct_env, aes(fill = pct_impervious), col=NA) +
-  scale_fill_viridis(name = "Percent") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/impervious surfaces.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(tree_cover, impervious, ct_sp)
-gc()
 
 #' -----------------------------------------------------------------------------
 #' length of interstates and major roads within the census tract
 #' -----------------------------------------------------------------------------
 
-load("./Data/Spatial Data/aadt_data.RData")
+nhpms_aadt <- read_csv(here::here("Data", "NHPMS_AADT_AEA.csv")) %>% 
+  st_as_sf(wkt = "WKT", crs = albers) %>% 
+  mutate(highway = ifelse(f_system %in% c(1, 2, 3), 1, 0),
+         major = ifelse(f_system %in% c(4, 5), 1, 0))
 
 highways <- filter(nhpms_aadt, highway == 1)
 major <- filter(nhpms_aadt, major == 1)
@@ -190,51 +174,6 @@ ct_env <- left_join(ct_env, highway_length, by="GEOID") %>%
          mean_aadt_intensity = mean_aadt / area_km2)
 
 head(ct_env)
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("AADT (total vehicles per day)") +
-  geom_sf(data = ct_env, aes(fill = sum_aadt/1000), col=NA) +
-  scale_fill_viridis(name = "vehicles/day\n(1000's)") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/total_aadt.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("AADT (average vehicles per day)") +
-  geom_sf(data = ct_env, aes(fill = mean_aadt/1000), col=NA) +
-  scale_fill_viridis(name = "vehicles/day\n(1000's)") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/mean_aadt.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("AADT Intensity (total vehicles per day per sq km)") +
-  geom_sf(data = ct_env, aes(fill = sum_aadt_intensity), col=NA) +
-  scale_fill_viridis(name = "vehicles/day/km2") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/total aadt intensity.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("AADT Intensity (mean no. vehicles per day per sq km)") +
-  geom_sf(data = ct_env, aes(fill = mean_aadt_intensity), col=NA) +
-  scale_fill_viridis(name = "vehicles/day/km2") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/mean aadt intensity.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(highways, highway_intersect, highway_length,
-   major, major_intersect, major_length,
-   nhpms, nhpms_aadt)
 
 #' -----------------------------------------------------------------------------
 #' Number of NPL sites within the census tract (polygons!)
@@ -247,7 +186,9 @@ rm(highways, highway_intersect, highway_length,
 #'        on activities (only had locations and status)
 #' -----------------------------------------------------------------------------
 
-load("./Data/Spatial Data/npl.RData")
+npl <- read_csv(here::here("Data", "NPL_Sites_AEA.csv")) %>% 
+  st_as_sf(wkt = "WKT", crs = albers)
+
 plot(st_geometry(npl))
 
 #' Remove "NPL Deleted" sites
@@ -256,11 +197,11 @@ npl <- filter(npl, SiteStatus != "NPL DELETED")
 plot(st_geometry(npl))
 
 #' Function for polygon counts weighted by distance
-count_in_buffer <- function(data_sf, sf_object, data_id_col = 1) {
+count_in_buffer <- function(data_sf, sf_object, data_id_col = "GEOID") {
   temp_df <- data.frame()
   
   poly_ids <- st_set_geometry(data_sf, NULL) %>%
-    select(data_id_col) %>%
+    dplyr::select(data_id_col) %>%
     distinct
   
   for (i in 1:nrow(poly_ids)) {
@@ -304,17 +245,6 @@ npl_counts <- count_in_buffer(ct_env, npl) %>%
   rename(npl_count = wt_count)
 
 ct_env <- left_join(ct_env, npl_counts, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Number of NPL sites within the census tract") +
-  geom_sf(data = ct_env, aes(fill = npl_count), col=NA) +
-  scale_fill_viridis(name = "No. of NPL sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/NPL sites.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
 
 rm(npl_counts, npl)
 
@@ -323,20 +253,22 @@ rm(npl_counts, npl)
 #' Weighted by distance to the CT (as above)
 #' -----------------------------------------------------------------------------
 
-load("./Data/Spatial Data/tri_inventory.RData")
+tri_by_facility <- read_csv(here::here("Data", "TRI_Data_AEA.csv")) %>% 
+  st_as_sf(wkt = "WKT", crs = albers)
 plot(st_geometry(tri_by_facility))
 
 #' Function for counts and total emissions weighted by distance
 count_emissions_in_buffer <- function(data_sf, sf_object, emissions_var,
-                                      data_id_col = 1, sf_id_col = 1) {
+                                      data_id_col = "GEOID", 
+                                      sf_id_col = 1) {
   temp_df <- data.frame()
   
   poly_ids <- st_set_geometry(data_sf, NULL) %>%
-    select(data_id_col) %>%
+    dplyr::select(data_id_col) %>%
     distinct
   
   unique_points <- ungroup(sf_object) %>%
-    select(sf_id_col) %>%
+    dplry::select(sf_id_col) %>%
     distinct()
   
   poly_wt_count <- vector()
@@ -392,70 +324,8 @@ tri_counts_emissions <- count_emissions_in_buffer(ct_env, tri_by_facility, "tota
          tri_tpy = wt_sum)
 
 ct_env <- left_join(ct_env, tri_counts_emissions, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Number of TRI sites within the census tract") +
-  geom_sf(data = ct_env, aes(fill = tri_count), col=NA) +
-  scale_fill_viridis(name = "No. of TRI sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/TRI sites.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-ggplot() +
-  ggtitle("TRI site releases (tpy) within the census tract") +
-  geom_sf(data = ct_env, aes(fill = tri_tpy), col=NA) +
-  scale_fill_viridis(name = "Tons per year") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/TRI releases.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
 
 rm(tri, tri_totals, tri_by_facility, tri_counts_emissions)
-
-#' -----------------------------------------------------------------------------
-#' Number of solid waste facilites, waste water treatment plants, and compost
-#' facilities within the census tract 
-#' Weighted as the NPL sites above
-#' -----------------------------------------------------------------------------
-
-load("./Data/Spatial Data/wwtf.RData")
-load("./Data/Spatial Data/lf.RData")
-load("./Data/Spatial Data/compost.RData")
-
-wwtf <- select(wwtf, Permit_Nam) %>%
-  rename(facility_id = Permit_Nam)
-
-lf <- select(lf, PGM_SITE_N) %>%
-  rename(facility_id = PGM_SITE_N)
-
-compost <- select(compost, FACILITY_N) %>%
-  rename(facility_id = FACILITY_N)
-
-waste_sites <- rbind(wwtf, lf, compost)
-plot(st_geometry(waste_sites))
-
-waste_site_counts <- count_in_buffer(ct_env, waste_sites) %>%
-  mutate_if(is.factor, as.character) %>%
-  rename(waste_site_count = wt_count)
-
-ct_env <- left_join(ct_env, waste_site_counts, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Number of WWTF, landfills, and composting sites within the census tract") +
-  geom_sf(data = ct_env, aes(fill = waste_site_count), col=NA) +
-  scale_fill_viridis(name = "No. of sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/waste sites.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(compost, lf, wwtf, waste_sites, waste_site_counts)
 
 #' -----------------------------------------------------------------------------
 #' Number of major criteria pollutant sources within the census tract
@@ -463,6 +333,9 @@ rm(compost, lf, wwtf, waste_sites, waste_site_counts)
 #' -----------------------------------------------------------------------------
 
 load("./Data/Spatial Data/emissions_inventory.RData")
+
+inventory_criteria <- read_csv(here::here("Data", "NEI_2014v2_AEA.csv")) %>% 
+  st_as_sf(wkt = "WKT", crs = albers)
 
 inventory_major <- filter(inventory_criteria, major == 1) %>%
   select(site_id) %>%
@@ -473,93 +346,6 @@ major_emit_counts <- count_in_buffer(ct_env, inventory_major) %>%
   rename(major_emit_count = wt_count)
 
 ct_env <- left_join(ct_env, major_emit_counts, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
 
-ggplot() +
-  ggtitle("Number of major criteria pollutant emitters within the census tract") +
-  geom_sf(data = ct_env, aes(fill = major_emit_count), col=NA) +
-  scale_fill_viridis(name = "No. of sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/major emitters.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(emissions_by_facility, emissions_totals, inventory, inventory_criteria,
-   inventory_major, inventory_other, major_emit_counts)
-
-#' -----------------------------------------------------------------------------
-#' Number of CAFOs within the census tract
-#' Weighed by distance as above
-#' -----------------------------------------------------------------------------
-
-load("./Data/Spatial Data/cafo.RData")
-
-cafo_counts <- count_in_buffer(ct_env, cafo) %>%
-  mutate_if(is.factor, as.character) %>%
-  rename(cafo_count = wt_count)
-
-ct_env <- left_join(ct_env, cafo_counts, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Number of CAFOs within the census tract") +
-  geom_sf(data = ct_env, aes(fill = cafo_count), col=NA) +
-  scale_fill_viridis(name = "No. of sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/CAFOs.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(cafo, cafo_counts)
-
-#' -----------------------------------------------------------------------------
-#' Number of mines and oil and gas wells within the census tract 
-#' Weighed as above
-#' -----------------------------------------------------------------------------
-
-load("./Data/Spatial Data/mines.RData")
-load("./Data/Spatial Data/wells.RData")
-
-mines <- select(mines, rec_no) %>%
-  rename(id = rec_no) %>%
-  distinct
-  
-wells <- select(wells, API) %>%
-  rename(id = API) %>%
-  distinct
-
-mines_wells <- rbind(mines, wells)
-
-mine_well_counts <- count_in_buffer(ct_env, mines_wells) %>%
-  mutate_if(is.factor, as.character) %>%
-  rename(mine_well_count = wt_count)
-
-ct_env <- left_join(ct_env, mine_well_counts, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
-
-ggplot() +
-  ggtitle("Number of mines and wells within the census tract") +
-  geom_sf(data = ct_env, aes(fill = mine_well_count), col=NA) +
-  scale_fill_viridis(name = "No. of sites") +
-  xlab("") + ylab("") +
-  theme(legend.position = "right") +
-  simple_theme
-ggsave(filename = paste("./Figures/CEI Figures/Environmental Variables/mines and wells.jpeg", sep=""), 
-       device = "jpeg", dpi=600)
-
-rm(mines, wells, mines_wells, mine_well_counts)
-
-#' -----------------------------------------------------------------------------
-#' Median year built
-#' -----------------------------------------------------------------------------
-
-load("./Data/Spatial Data/acs.RData")
-
-yr_blt <- select(acs, GEOID, med_year_blt_housing) %>% 
-  filter(GEOID %in% ct_env$GEOID) %>% 
-  st_set_geometry(NULL)
-
-ct_env <- left_join(ct_env, yr_blt, by="GEOID")
-save(ct_env, file="./Data/CEI Data/CT_Environmental.RData")
+st_write(ct_env, here::here("Data", "CT_ENV.csv"),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)

@@ -56,12 +56,15 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' -----------------------------------------------------------------------------
 #' Create the data frame to hold all of the census tract variables
 
-load("./Data/Spatial Data/dm_tracts.RData")
-ct_soc <- select(dm_tracts, GEOID) %>%
-  arrange(GEOID) %>%
-  mutate(area_km2 = as.vector(unclass(st_area(.)) / (1000^2)))
+acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
 
-rm(dm_tracts)
+acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers)
+plot(st_geometry(acs_units))
+ct_soc <- acs_units
+
+rm(acs_units)
 #' -----------------------------------------------------------------------------
 
 #' -----------------------------------------------------------------------------

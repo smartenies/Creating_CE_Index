@@ -56,8 +56,7 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' remove hospitalizations from 2015
 #' -----------------------------------------------------------------------------
 
-hosp_path <- "U:/Research/2017_ALA_HIA/Data/CHA Data/co_hosp_w_outcome_df.csv"
-co_hosp <- read_csv(hosp_path) %>%
+co_hosp <- read_csv(here::here("Data/Hosp_Data", "co_hosp_w_outcome_df.csv")) %>%
   mutate(county_final = ifelse(county_geo == "014" & county_final == "159", 
                                "014", county_final),
          FIPS = paste("08", county_final, sep=""),
@@ -91,7 +90,7 @@ zip_pop <- read_csv(here::here("Data/ACS_Data", "co_populations.csv")) %>%
 
 #' standard populations (2000 US Population, 19 age groups)
 #' Data dictionary: https://seer.cancer.gov/stdpopulations/stdpopdic.html
-std_pop <- read_table(here::here("Data/ACS_Data", "stdpop.19ages.txt")) %>%
+std_pop <- read.table(here::here("Data/ACS_Data", "stdpop.19ages.txt")) %>%
   mutate(Standard = as.numeric(substr(V1, start=1, stop=3)),
          age_group = as.numeric(substr(V1, start=4, stop=6)),
          std_pop_mil = as.numeric(substr(V1, start=7, stop=8))) %>%
@@ -146,6 +145,7 @@ summary(zip_rate_adj)
 #' weighted average rate for the census tracts
 #' -----------------------------------------------------------------------------
 
+#' census blocks
 blocks <- st_read(here::here("Data/ACS_Data", "tabblock2010_08_pophu.shp")) %>%
   st_transform(crs=albers) %>%
   select(BLOCKID10, POP10) %>%
@@ -158,11 +158,9 @@ head(block_centroids)
 # plot(st_geometry(blocks), border="red", fill=NA)
 # plot(st_geometry(block_centroids), col="blue", add=T)
 
-#' Specify the geodatabase name and output name
+#' census tracts
 tract_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
-tract_output_name <- str_replace(tract_gdb_name, ".gdb", ".csv")
 
-#' get shapefile and project to Albers Equal Area
 tracts <- st_read(dsn = here::here("Data/ACS_Data", tract_gdb_name),
                      layer = str_remove(tract_gdb_name, ".gdb")) %>%
   st_transform(crs=albers) %>% 
@@ -172,14 +170,13 @@ plot(st_geometry(tracts))
 plot(st_geometry(blocks), col=NA, border="blue")
 plot(st_geometry(tracts), col=NA, border="red", add=T)
 
-zcta_gdb_name <- "ACS_2014_5YR_ZCTA_08_COLORADO.gdb"
-zcta_output_name <- str_replace(zcta_gdb_name, ".gdb", ".csv")
+#' census ZCTAs
+zcta_gdb_name <- "ACS_2014_5YR_ZCTA.gdb"
 
-#' get shapefile and project to Albers Equal Area
 zctas <- st_read(dsn = here::here("Data/ACS_Data", zcta_gdb_name),
                  layer = str_remove(zcta_gdb_name, ".gdb")) %>%
   st_transform(crs=albers) %>% 
-  rename(ZCTA = TRACT)
+  rename(ZIP = ZCTA5CE10)
 plot(st_geometry(zcta))
 
 #' Join census block centroids (with population), tracts, and ZCTA
@@ -218,10 +215,14 @@ hosp_rates <- btz %>%
 summary(hosp_rates)
 
 #' Join with CO Tracts
-load("./Data/Spatial Data/co_tracts.RData")
-co_tracts <- select(co_tracts, GEOID)
+acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
 
-hosp_rates <- left_join(co_tracts, hosp_rates, by="GEOID")
+acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
+  st_transform(crs=albers)
+plot(st_geometry(acs_units))
+
+hosp_rates <- left_join(acs_units, hosp_rates, by="GEOID")
 
 hosp_rates_name <- "Hospitalizations_AEA.csv"
 st_write(hosp_rates, here::here("Data", hosp_rates_name),
