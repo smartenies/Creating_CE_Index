@@ -96,7 +96,6 @@ o3_monitors <- filter(o3_monitors_raw, State_Code == "08") %>%
   #" convert ppm to ppb
   mutate(weekly_average = weekly_average * 1000)
 
-
 head(pm_monitors)
 head(o3_monitors)
 
@@ -234,7 +233,8 @@ pm_ct_data <- pm_ct_data %>%
          biweekly_average_pm_var = biweekly_average_var) %>%
   mutate_if(is.factor, as.character)
 
-pm_ct_data_full <- full_join(ap_dates, pm_ct_data, by="week_ending")
+pm_ct_data_full <- left_join(ct_ap, pm_ct_data, by = "GEOID") %>% 
+  full_join(ap_dates, by="week_ending")
 
 st_write(pm_ct_data_full, here::here("Data", "CT_PM.csv"),
          layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
@@ -265,7 +265,6 @@ for (i in 1:length(week_list)) {
   
   #' Biweekly average for each monitor
   o3_week <- o3_week %>%
-    select(-week_ending, -year) %>%
     group_by(monitor_id) %>%
     summarize(pollutant = "o3",
               biweekly_average = mean(weekly_average),
@@ -337,54 +336,23 @@ o3_ct_data <- o3_ct_data %>%
          biweekly_average_o3_var = biweekly_average_var) %>%
   mutate_if(is.factor, as.character)
 
-o3_ct_data_full <- full_join(ap_dates, o3_ct_data, by="week_ending")
+o3_ct_data_full <- left_join(ct_ap, o3_ct_data, by = "GEOID") %>% 
+  full_join(ap_dates, by="week_ending")
 
-save(o3_ct_data, o3_ct_data_full, o3_cv_results, o3_diagnostics,
-     file = "./Data/Air Quality/o3 kriging results.RData")
-write_xlsx(o3_diagnostics,
-           path="./Data/Air Quality/O3 Kriging Diagnostics.xlsx")
+st_write(o3_ct_data_full, here::here("Data", "CT_O3.csv"),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
+write_csv(o3_cv_results, here::here("Data", "O3_Kriging_CV_Results.csv"))
+write_csv(o3_diagnostics, here::here("Data", "O3_Kriging_Diagnositics.csv"))
 
 
 #' ------------------------------------------------------------------------------
 #' Combined both sets of data into a single data frame
 #' ------------------------------------------------------------------------------
 
-load("./Data/Spatial Data/dm_tracts.RData")
-ct <- select(dm_tracts, GEOID) %>%
-  arrange(GEOID)
-
-ct_df <- st_set_geometry(ct, NULL)
-
-start <- ceiling_date(as.Date("2009-01-01"), unit="week")  + 7
-ap_dates <- data.frame(week_ending = seq.Date(from = start, 
-                                              to = as.Date("2017-12-31"),
-                                              by="2 weeks"))
-week_list <- sort(unique(ap_dates$week_ending))
-
-#' create data frame with all of the dates needed
-temp <- data.frame()
-for (i in 1:nrow(ap_dates)) {
-  temp1 <- data.frame(week_ending = rep(ap_dates[i,1], times = nrow(ct)))
-  temp1 <- bind_cols(ct_df, temp1)
-  temp <- bind_rows(temp, temp1)
-  rm(temp1)
-}
-
-ct_air_pollution <- st_as_sf(left_join(temp, ct, by="GEOID"))
-head(ct_air_pollution)
-
-rm(dm_tracts)
-
-load("./Data/Air Quality/pm kriging results.RData")
-load("./Data/Air Quality/o3 kriging results.RData")
-
-ct_air_pollution <- left_join(ct_air_pollution, pm_ct_data_full,
+ct_air_pollution <- left_join(pm_ct_data_full, 
+                              st_set_geometry(o3_ct_data_full, NULL),
                               by=c("GEOID", "week_ending")) %>%
-  full_join(o3_ct_data_full, by=c("GEOID", "week_ending")) %>%
   arrange(week_ending, GEOID)
 
-save(ct_air_pollution, file="./Data/CEI Data/CT_Air Pollution.RData")
-
-# rm(o3, o3_average, o3_ct_data, o3_cv_results, o3_diagnostics,
-#    pm, pm_average, pm_ct_data, pm_cv_results, pm_diagnostics,
-#    monitors)
+st_write(ct_air_pollution, here::here("Data", "CT_Air_POllution.csv"),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
