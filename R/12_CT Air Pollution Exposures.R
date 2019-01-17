@@ -12,6 +12,7 @@ library(spatialEco)
 library(gstat)
 library(automap)
 library(tidyverse)
+library(lubridate)
 
 ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 albers <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
@@ -22,46 +23,74 @@ albers <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 
 #' -----------------------------------------------------------------------------
 
 #' Census tract centroids for kriging
-acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
+#' Get shapefile and project to Albers Equal Area
+#' Depending on the study area, will need to change this
+unit_name <- "CO_Tracts_AEA.csv"
+spatial_units <- read_csv(here::here("Data", unit_name)) %>%
+  st_as_sf(wkt = "WKT", crs = albers)
+plot(st_geometry(spatial_units))
 
-acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
-                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
-  st_transform(crs=albers)
-plot(st_geometry(acs_units))
-
-ct_ap <- select(acs_units, GEOID) %>%
+ct_ap <- select(spatial_units, GEOID) %>%
   arrange(GEOID) %>%
   st_centroid
 
-ct_air_pollution <- select(acs_units, GEOID) %>%
+ct_air_pollution <- select(spatial_units, GEOID) %>%
   arrange(GEOID)
 
 #' Converting the census tract centroids from sf to sp 
 ct_sp <- as(ct_ap, "Spatial")
 plot(ct_sp)
 
-#' Monitoring data
-load("./Data/CEI Data/pm_monitor_metrics.RData")
-load("./Data/CEI Data/o3_monitor_metrics.RData")
-load("./Data/CEI Data/monitors.RData")
+#' Monitoring data--
+#' Read in files
+#' Calculate 2-week averages
+#' Use daily means for PM2.5 and daily8h max for ozone
+pm_files <- list.files(here::here("Data/AQS_Data"), pattern = "daily_88101",
+                       full.names = T)
+pm_monitors <- do.call(bind_rows, lapply(pm_files, read_csv))
+colnames(pm_monitors) <- str_replace(colnames(pm_monitors), " ", "_")
 
-pm_monitors <- select(pm_monitors, monitor_id) %>%
-  left_join(pm_average, by = "monitor_id") %>%
-  arrange(week_ending) %>%
-  mutate(year = year(week_ending)) %>%
-  mutate(week_ending = as.Date(week_ending)) %>%
-  filter(!(year == 2018)) %>%
-  filter(!(is.na(week_ending)))
+pm_monitors <- filter(pm_monitors, State_Code == "08") %>% 
+  mutate(County_Code = str_pad(County_Code, width = 3, side = "left", pad = "0"),
+         Site_Num = str_pad(Site_Num, width = 4, side = "left", pad = "0")) %>% 
+  mutate(monitor_id = paste0(State_Code, County_Code, Site_Num)) %>% 
+  filter(POC == 1) %>% 
+  mutate(year = strftime(Date_Local, format = "%Y"),
+         week_starting = as.Date(floor_date(Date_Local, unit = "week")),
+         week_ending = as.Date(ceiling_date(Date_Local, unit = "week"))) %>%
+  mutate(Date_Local = as.Date(Date_Local)) %>%
+  arrange(Date_Local, monitor_id) %>%
+  distinct()
 
-o3_monitors <- select(o3_monitors, monitor_id) %>%
-  left_join(o3_average, by = "monitor_id") %>%
-  arrange(week_ending) %>%
-  mutate(year = year(week_ending)) %>%
-  mutate(week_ending = as.Date(week_ending)) %>%
-  filter(!(year == 2018)) %>%
-  filter(!(is.na(week_ending))) %>%
-  #' convert ppm to ppb
-  mutate(weekly_average = weekly_average * 1000)
+pm_average <- pm_monitors %>%
+  dplyr::group_by(monitor_id, week_ending) %>%
+  summarize(weekly_average = mean(Arithmetic_Mean)) %>%
+  mutate(pollutant = "pm")
+ 
+################################################## 
+o3_files <- list.files(here::here("Data/AQS_Data"), pattern = "8hour_44201",
+                       full.names = T)
+o3_monitors <- do.call(bind_rows, lapply(o3_files, read_csv))
+colnames(o3_monitors) <- gsub(" ", "_", colnames(o3_monitors))
+
+o3_monitors <- filter(o3_monitors, State_Code == "08") %>% 
+  mutate(County_Code = str_pad(County_Code, width = 3, side = "left", pad = "0"),
+         Site_Num = str_pad(Site_Num, width = 4, side = "left", pad = "0")) %>% 
+  mutate(monitor_id = paste0(State_Code, County_Code, Site_Num)) %>% 
+  filter(POC == 1) %>% 
+  group_by(monitor_id, Date_Local) %>% 
+  summarize(Max_Measurement = max(Mean_Excluding_All_Flagged_Data)) %>% 
+  mutate(year = strftime(Date_Local, format = "%Y"),
+         week_starting = as.Date(floor_date(Date_Local, unit = "week")),
+         week_ending = as.Date(ceiling_date(Date_Local, unit = "week"))) %>%
+  mutate(Date_Local = as.Date(Date_Local)) %>%
+  arrange(Date_Local, monitor_id) %>%
+  distinct()
+
+o3_average <- o3_monitors %>%
+  dplyr::group_by(monitor_id, week_ending) %>%
+  summarize(weekly_average = mean(Max_Measurement)) %>%
+  mutate(pollutant = "pm")
 
 head(pm_monitors)
 head(o3_monitors)
@@ -75,26 +104,9 @@ summary(o3_monitors)
 hist(pm_monitors$weekly_average)
 hist(o3_monitors$weekly_average)
 
-plot(st_geometry(dm_tracts), border="grey50")
 plot(st_geometry(ct_ap), add=T, col="black")
 plot(st_geometry(pm_monitors), add=T, col="green")
 plot(st_geometry(o3_monitors), add=T, col="blue")
-
-#' write out shapefiles to check distances
-# st_write(dm_tracts[,4], "./Data/Spatial Data/Shapefiles/dm_tracts.shp",
-#          delete_dsn = T)
-# st_write(ct_ap, "./Data/Spatial Data/Shapefiles/dm_tracts_centroids.shp",
-#          delete_dsn = T)
-# st_write(pm_monitors, "./Data/Spatial Data/Shapefiles/pm_monitors.shp",
-#          delete_dsn = T)
-# st_write(o3_monitors, "./Data/Spatial Data/Shapefiles/o3_monitors.shp",
-#          delete_dsn = T)
-
-#' Choosing a kriging cutoff distance:
-#'     - At 30 km we lose some of the eastern census tracts
-#'     - At 40 km we lose the two eastern-most census tracts, but they only 
-#'       have a couple participants
-#'     - Going to go with 40 km for now and see how it looks
 
 #' Check date lists
 #' Not all dates are included, so need a full list for later
@@ -117,6 +129,11 @@ show.vgms()
 all_models <- c("Exp", "Sph", "Gau", "Mat", "Ste", "Lin")
 
 #' cutoff distance is 40 km
+#' Choosing a kriging cutoff distance:
+#'     - At 30 km we lose some of the eastern census tracts
+#'     - At 40 km we lose the two eastern-most census tracts, but they only 
+#'       have a couple participants
+#'     - Going to go with 40 km for now and see how it looks
 c_dist = 40000
 
 pm_ct_data <- data.frame()

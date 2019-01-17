@@ -27,17 +27,14 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' NHPMS data available from: https://www.fhwa.dot.gov/policyinformation/hpms/shapefiles.cfm
 #' -----------------------------------------------------------------------------
 
-#' Specify the geodatabase name and output name
-acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
-acs_output_name <- str_replace(acs_gdb_name, ".gdb", ".csv")
+#' Get shapefile and project to Albers Equal Area
+#' Depending on the study area, will need to change this
+unit_name <- "CO_Tracts_AEA.csv"
+spatial_units <- read_csv(here::here("Data", unit_name)) %>%
+  st_as_sf(wkt = "WKT", crs = albers)
+plot(st_geometry(spatial_units))
 
-#' get shapefile and project to Albers Equal Area
-acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
-                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
-  st_transform(crs=albers)
-plot(st_geometry(acs_units))
-
-boundary <- st_make_grid(acs_units, n=1) %>%
+boundary <- st_make_grid(spatial_units, n=1) %>%
   st_buffer(., dist = 2000)
 
 #' Read in NHPS 2014 shapefile, project to Albers equal area, clip to grid

@@ -56,19 +56,19 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' -----------------------------------------------------------------------------
 #' Create the data frame to hold all of the census tract variables
 
-acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
+#' Get shapefile and project to Albers Equal Area
+#' Depending on the study area, will need to change this
+unit_name <- "CO_Tracts_AEA.csv"
+spatial_units <- read_csv(here::here("Data", unit_name)) %>%
+  st_as_sf(wkt = "WKT", crs = albers)
+plot(st_geometry(spatial_units))
 
-acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
-                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
-  st_transform(crs=albers)
-plot(st_geometry(acs_units))
-
-ct_env <- acs_units %>% 
+ct_env <- spatial_units %>% 
   mutate(area_km2 = as.vector(unclass(st_area(.))) / 1000^2)
 
-rm(acs_units)
-#' -----------------------------------------------------------------------------
+rm(spatial_units)
 
+#' -----------------------------------------------------------------------------
 #' Function for doughnut buffers
 doughnut <- function(poly, outer, inner) {
   buff_outer <- st_buffer(poly, dist = outer)
@@ -79,10 +79,10 @@ doughnut <- function(poly, outer, inner) {
 
 #' -----------------------------------------------------------------------------
 #' Built environment and hazardous land use variables
-#' see: 4_Hazardous Land Uses.R
-#'      7_Emissions Inventory.R
-#'      8_Toxic Releases.R
-#'      9_Traffic Variables.R
+#' see: 04_Hazardous Land Uses.R
+#'      06_Emissions Inventory.R
+#'      07_Toxic Releases.R
+#'      08_Traffic Variables.R
 #' -----------------------------------------------------------------------------
 
 #' -----------------------------------------------------------------------------
@@ -117,9 +117,9 @@ nhpms_aadt <- read_csv(here::here("Data", "NHPMS_AADT_AEA.csv")) %>%
 highways <- filter(nhpms_aadt, highway == 1)
 major <- filter(nhpms_aadt, major == 1)
 
-plot(st_geometry(highways), col="red")
-plot(st_geometry(major), col="blue", add=T)
-plot(st_geometry(ct_env), border="grey50", col=NA, size=1, add=T)
+# plot(st_geometry(highways), col="red")
+# plot(st_geometry(major), col="blue", add=T)
+# plot(st_geometry(ct_env), border="grey50", col=NA, size=1, add=T)
 
 #' Highway lengths
 highway_intersect <- st_intersection(ct_env, highways) 
@@ -246,8 +246,6 @@ npl_counts <- count_in_buffer(ct_env, npl) %>%
 
 ct_env <- left_join(ct_env, npl_counts, by="GEOID")
 
-rm(npl_counts, npl)
-
 #' -----------------------------------------------------------------------------
 #' Number of TRI sites and 5 year average tpy releases 
 #' Weighted by distance to the CT (as above)
@@ -268,7 +266,7 @@ count_emissions_in_buffer <- function(data_sf, sf_object, emissions_var,
     distinct
   
   unique_points <- ungroup(sf_object) %>%
-    dplry::select(sf_id_col) %>%
+    dplyr::select(sf_id_col) %>%
     distinct()
   
   poly_wt_count <- vector()
@@ -318,27 +316,25 @@ count_emissions_in_buffer <- function(data_sf, sf_object, emissions_var,
   return(temp_df)
 }
 
-tri_counts_emissions <- count_emissions_in_buffer(ct_env, tri_by_facility, "total_tpy") %>%
+tri_counts_emissions <- count_emissions_in_buffer(ct_env, tri_by_facility, 
+                                                  emissions_var = "total_tpy",
+                                                  sf_id_col = "TRI_FACILITY_ID") %>%
   mutate_if(is.factor, as.character) %>%
   rename(tri_count = wt_count,
          tri_tpy = wt_sum)
 
 ct_env <- left_join(ct_env, tri_counts_emissions, by="GEOID")
 
-rm(tri, tri_totals, tri_by_facility, tri_counts_emissions)
-
 #' -----------------------------------------------------------------------------
 #' Number of major criteria pollutant sources within the census tract
 #' Weighted by distance as above
 #' -----------------------------------------------------------------------------
 
-load("./Data/Spatial Data/emissions_inventory.RData")
-
 inventory_criteria <- read_csv(here::here("Data", "NEI_2014v2_AEA.csv")) %>% 
   st_as_sf(wkt = "WKT", crs = albers)
 
-inventory_major <- filter(inventory_criteria, major == 1) %>%
-  select(site_id) %>%
+inventory_major <- filter(inventory_criteria, major_source == 1) %>%
+  select(eis_facility_site_id) %>%
   distinct
 
 major_emit_counts <- count_in_buffer(ct_env, inventory_major) %>%

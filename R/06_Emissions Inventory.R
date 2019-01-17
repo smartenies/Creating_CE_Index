@@ -38,10 +38,9 @@ nei_output_name <- "NEI_2014v2_AEA.csv"
 
 #' Get shapefile and project to Albers Equal Area
 #' Depending on the study area, will need to change this
-acs_gdb_name <- "ACS_2014_5YR_TRACT_08_COLORADO.gdb"
-spatial_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
-                         layer = str_remove(acs_gdb_name, ".gdb")) %>%
-  st_transform(crs=albers)
+unit_name <- "CO_Tracts_AEA.csv"
+spatial_units <- read_csv(here::here("Data", unit_name)) %>%
+  st_as_sf(wkt = "WKT", crs = albers)
 plot(st_geometry(spatial_units))
 
 #' 10 km buffer around the grid (to account for buffers around monitoring pts)

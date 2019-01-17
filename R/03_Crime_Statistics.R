@@ -5,7 +5,6 @@
 #' 
 #' Description:
 #' This script summarizes crime statistics
-#' 
 #' =============================================================================
 
 library(sf)
@@ -33,8 +32,6 @@ ll_wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 #' programs provided by ICPSR
 #' -----------------------------------------------------------------------------
 
-crime_output_name <- "Crime_Rates_AEA.csv"
-
 years <- c("2010", "2011", "2012")
 crime <- data.frame()
 
@@ -50,6 +47,7 @@ for (i in 1:length(years)) {
                        "CITY", "STATE_AB", "POP_GROUP", "AGENCY", "CORE_CITY",
                        "CURRENT_POP", "UCR_COUNTY_CODE", "MSA_CODE", "LAST_POP", "FIPS_COUNTY",
                        "DATE", "HOUR", "UCR_CODE_1", "UCR_CODE_2", "UCR_CODE_3")
+  temp2$year <- years[i]
   
   crime <- rbind(crime, temp2)
   print(years[i])
@@ -70,6 +68,8 @@ for (i in 1:length(years2)) {
                        "CITY", "STATE_AB", "POP_GROUP", "AGENCY", "CORE_CITY",
                        "CURRENT_POP", "UCR_COUNTY_CODE", "MSA_CODE", "LAST_POP", "FIPS_COUNTY",
                        "DATE", "HOUR", "UCR_CODE_1", "UCR_CODE_2", "UCR_CODE_3")
+  temp2$year <- years2[i]
+  
   crime2 <- rbind(crime2, temp2)
   print(years2[i])
   rm(temp, temp2)
@@ -79,7 +79,6 @@ names(crime)
 names(crime2)
 
 crime <- bind_rows(crime, crime2)
-crime$year <- substr(as.character(crime$INCDATE), 1, 4)
 
 rm(crime2, years, years2)
 
@@ -132,55 +131,54 @@ city_agencies <- agencies[which(agencies$AGENCY == 1),]
 #'  7 = tribal agencies
 #'  8 = federal agencies
 
-#' population by agency
-agency_pop <- unique(crime[,c("FIPS_COUNTY", "CITY", "AGENCY", 
-                              "CURRENT_POP", "LAST_POP")])
-
-agency_pop <- agency_pop[which(agency_pop$AGENCY != 3),] #' drop universities
-summary(agency_pop)
-head(agency_pop)
-
-agency_avg_pop <- agency_pop %>% 
-  group_by(CITY) %>% 
-  summarize(pop = mean(CURRENT_POP, na.rm=T)) %>% 
-  rename(GEOID = CITY) %>% 
-  ungroup()
-
-#' calculate average crimes per year
+#' calculate average crimes per year in each county
+#' NOTE: This will need to change
 n_yrs <- length(unique(crime$year))
 sum_crime <- crime %>%
-  group_by(CITY) %>%
+  group_by(FIPS_COUNTY) %>%
   count() %>%
   rename(total_crimes = n)
 
 sum_violent_crime <- crime %>%
   filter(violent == 1) %>%
-  group_by(CITY) %>%
+  group_by(FIPS_COUNTY) %>%
   count() %>%
   rename(total_violent = n)
 
 sum_prop_crime <- crime %>%
   filter(property == 1) %>%
-  group_by(CITY) %>%
+  group_by(FIPS_COUNTY) %>%
   count() %>%
   rename(total_property = n)
 
-sum_crime <- left_join(sum_crime, sum_violent_crime, by="CITY") %>%
-  left_join(sum_prop_crime, by="CITY") %>%
-  rename(GEOID = CITY) %>%
+sum_crime <- left_join(sum_crime, sum_violent_crime, by="FIPS_COUNTY") %>%
+  left_join(sum_prop_crime, by="FIPS_COUNTY") %>%
   mutate(avg_total_crimes = total_crimes / n_yrs,
          avg_violent_crimes = total_violent / n_yrs,
          avg_property_crimes = total_property / n_yrs) %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(FIPS_COUNTY = paste0("08", FIPS_COUNTY))
 rm(sum_violent_crime, sum_prop_crime)
 
+# get county populations
+#' Specify the geodatabase name and output name
+acs_gdb_name <- "ACS_2014_5YR_COUNTY.gdb"
+acs_layers <- st_layers(here::here("Data/ACS_Data", acs_gdb_name))
+
+#' get shapefile and project to Albers Equal Area
+county_pop <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
+                      layer = "X01_AGE_AND_SEX", stringsAsFactors = F) %>%
+  select(GEOID, pop = B01001e1) %>% 
+  mutate(FIPS_COUNTY = str_remove(GEOID, "05000US")) %>% 
+  mutate(State = substr(FIPS_COUNTY, 1, 2)) %>% 
+  filter(State == "08")
+
 #' Calculate rate per 1000
-crime_rate <- left_join(sum_crime, agency_avg_pop, by="GEOID") %>%
+crime_rate <- left_join(sum_crime, county_pop, by="FIPS_COUNTY") %>%
   filter(pop != 0) %>%
   mutate(crime_rate = (avg_total_crimes / pop * per_pop),
          violent_rate = (avg_violent_crimes / pop) * per_pop,
          property_rate = (avg_property_crimes / pop) * per_pop) %>% 
-  mutate(GEOID = as.character(GEOID)) %>% 
   mutate(crime_rate = ifelse(crime_rate < 0, NA, crime_rate),
          violent_rate = ifelse(violent_rate < 0, NA, violent_rate),
          property_rate = ifelse(property_rate < 0, NA, property_rate))
@@ -192,11 +190,29 @@ summary(crime_rate)
 #' 
 #' The crosswalk is available in R
 #' 
-#' 
+#' Currently matching to counties boundaries for the state of Colorado
+#' Available here: https://www.census.gov/geo/maps-data/data/tiger-line.html
 #' -----------------------------------------------------------------------------
 
 load(here::here("Data/FBI_Data/ICPSR_35158/DS0001", "35158-0001-Data.rda"))
+links <- da35158.0001 %>% 
+  filter(FIPS_ST == "08")
+  
+counties <- st_read(here::here("Data/ACS_Data", "tl_2014_us_county.shp"),
+                    stringsAsFactors = F) %>% 
+  filter(STATEFP == "08") %>% 
+  st_transform(albers) %>% 
+  select(FIPS_COUNTY = COUNTYFP, NAME) %>% 
+  mutate(FIPS_COUNTY = paste0("08", FIPS_COUNTY))
 
+crime_data <- left_join(counties, crime_rate, by = "FIPS_COUNTY") %>% 
+  rename(COUNTYFP = FIPS_COUNTY)
 
+ggplot(filter(crime_data, COUNTYFP != "08011")) +
+  geom_sf(aes(fill = crime_rate)) +
+  scale_fill_viridis(name = "Crimes per 1,000")
 
+crime_output_name <- "Crime_Rates_AEA.csv"
+st_write(crime_data, here::here("Data", crime_output_name),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
 

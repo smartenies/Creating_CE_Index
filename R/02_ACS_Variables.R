@@ -35,7 +35,8 @@ acs_output_name <- ("ACS_AEA.csv")
 
 #' get shapefile and project to Albers Equal Area
 acs_units <- st_read(dsn = here::here("Data/ACS_Data", acs_gdb_name),
-                     layer = str_remove(acs_gdb_name, ".gdb")) %>%
+                     layer = str_remove(acs_gdb_name, ".gdb"),
+                     stringsAsFactors = F) %>%
   st_transform(crs=albers)
 plot(st_geometry(acs_units))
 
