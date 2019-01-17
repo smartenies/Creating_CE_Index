@@ -47,10 +47,12 @@ plot(ct_sp)
 #' Use daily means for PM2.5 and daily8h max for ozone
 pm_files <- list.files(here::here("Data/AQS_Data"), pattern = "daily_88101",
                        full.names = T)
-pm_monitors <- do.call(bind_rows, lapply(pm_files, read_csv))
-colnames(pm_monitors) <- str_replace(colnames(pm_monitors), " ", "_")
+pm_monitors_raw <- do.call(bind_rows, lapply(pm_files, read_csv))
+colnames(pm_monitors_raw) <- str_replace(colnames(pm_monitors_raw), " ", "_")
 
-pm_monitors <- filter(pm_monitors, State_Code == "08") %>% 
+pm_monitors <- filter(pm_monitors_raw, State_Code == "08") %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = ll_wgs84) %>% 
+  st_transform(crs = albers) %>% 
   mutate(County_Code = str_pad(County_Code, width = 3, side = "left", pad = "0"),
          Site_Num = str_pad(Site_Num, width = 4, side = "left", pad = "0")) %>% 
   mutate(monitor_id = paste0(State_Code, County_Code, Site_Num)) %>% 
@@ -60,37 +62,40 @@ pm_monitors <- filter(pm_monitors, State_Code == "08") %>%
          week_ending = as.Date(ceiling_date(Date_Local, unit = "week"))) %>%
   mutate(Date_Local = as.Date(Date_Local)) %>%
   arrange(Date_Local, monitor_id) %>%
-  distinct()
-
-pm_average <- pm_monitors %>%
+  distinct() %>% 
   dplyr::group_by(monitor_id, week_ending) %>%
   summarize(weekly_average = mean(Arithmetic_Mean)) %>%
   mutate(pollutant = "pm")
- 
-################################################## 
+
 o3_files <- list.files(here::here("Data/AQS_Data"), pattern = "8hour_44201",
                        full.names = T)
-o3_monitors <- do.call(bind_rows, lapply(o3_files, read_csv))
-colnames(o3_monitors) <- gsub(" ", "_", colnames(o3_monitors))
+o3_monitors_raw <- do.call(bind_rows, lapply(o3_files, read_csv))
+colnames(o3_monitors_raw) <- gsub(" ", "_", colnames(o3_monitors_raw))
 
-o3_monitors <- filter(o3_monitors, State_Code == "08") %>% 
+o3_monitors <- filter(o3_monitors_raw, State_Code == "08") %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = ll_wgs84) %>% 
+  st_transform(crs = albers) %>% 
   mutate(County_Code = str_pad(County_Code, width = 3, side = "left", pad = "0"),
          Site_Num = str_pad(Site_Num, width = 4, side = "left", pad = "0")) %>% 
   mutate(monitor_id = paste0(State_Code, County_Code, Site_Num)) %>% 
   filter(POC == 1) %>% 
   group_by(monitor_id, Date_Local) %>% 
-  summarize(Max_Measurement = max(Mean_Excluding_All_Flagged_Data)) %>% 
+  
+  #' Select highest daily 8-hour mean for each monitor
+  summarize(Daily_Max = max(Mean_Excluding_All_Flagged_Data)) %>% 
   mutate(year = strftime(Date_Local, format = "%Y"),
          week_starting = as.Date(floor_date(Date_Local, unit = "week")),
          week_ending = as.Date(ceiling_date(Date_Local, unit = "week"))) %>%
   mutate(Date_Local = as.Date(Date_Local)) %>%
   arrange(Date_Local, monitor_id) %>%
-  distinct()
-
-o3_average <- o3_monitors %>%
+  distinct() %>% 
   dplyr::group_by(monitor_id, week_ending) %>%
-  summarize(weekly_average = mean(Max_Measurement)) %>%
-  mutate(pollutant = "pm")
+  summarize(weekly_average = mean(Daily_Max)) %>%
+  mutate(pollutant = "o3") %>% 
+  
+  #" convert ppm to ppb
+  mutate(weekly_average = weekly_average * 1000)
+
 
 head(pm_monitors)
 head(o3_monitors)
@@ -104,17 +109,18 @@ summary(o3_monitors)
 hist(pm_monitors$weekly_average)
 hist(o3_monitors$weekly_average)
 
-plot(st_geometry(ct_ap), add=T, col="black")
+plot(st_geometry(ct_ap), col="black")
 plot(st_geometry(pm_monitors), add=T, col="green")
 plot(st_geometry(o3_monitors), add=T, col="blue")
 
 #' Check date lists
-#' Not all dates are included, so need a full list for later
+#' Not all dates may be included, so need a full list for later
 length(unique(pm_monitors$week_ending)) == length(unique(o3_monitors$week_ending))
 
-start <- ceiling_date(as.Date("2009-01-01"), unit="week")  + 7
-ap_dates <- data.frame(week_ending = seq.Date(from = start, 
-                                              to = as.Date("2017-12-31"),
+start <- ceiling_date(sort(o3_monitors_raw$Date_Local)[1], unit="week") + 7
+end <- sort(o3_monitors_raw$Date_Local)[length(o3_monitors_raw$Date_Local)]
+ap_dates <- data.frame(week_ending = seq.Date(from = start,
+                                              to = end,
                                               by="2 weeks"))
 week_list <- sort(unique(ap_dates$week_ending))
 
@@ -126,7 +132,7 @@ library(gstat)
 library(automap)
 
 show.vgms()
-all_models <- c("Exp", "Sph", "Gau", "Mat", "Ste", "Lin")
+all_models <- c("Exp", "Sph", "Gau", "Mat", "Ste", "Lin", "Cir")
 
 #' cutoff distance is 40 km
 #' Choosing a kriging cutoff distance:
@@ -156,7 +162,7 @@ for (i in 1:length(week_list)) {
   
   #' Biweekly average for each monitor
   pm_week <- pm_week %>%
-    select(-week_ending, -year) %>%
+    select(-week_ending) %>%
     group_by(monitor_id) %>%
     summarize(pollutant = "pm",
               biweekly_average = mean(weekly_average),
@@ -168,12 +174,12 @@ for (i in 1:length(week_list)) {
   #' Kriging using gstat
   #' First, fit the empirical variogram
   vgm <- variogram(biweekly_average ~ 1, pm_week, cutoff = c_dist)
-  #plot(vgm)
+  # plot(vgm)
   
   #' Second, fit the model
   vgm_fit <- fit.variogram(vgm, model=vgm(all_models), fit.kappa = seq(.3,5,.01))
   model <- as.character(vgm_fit$model)[nrow(vgm_fit)]
-  #plot(vgm, vgm_fit)
+  # plot(vgm, vgm_fit)
   
   #' Third, krige
   ok_result <- krige(biweekly_average ~ 1, pm_week, ct_sp, vgm_fit,
@@ -230,10 +236,10 @@ pm_ct_data <- pm_ct_data %>%
 
 pm_ct_data_full <- full_join(ap_dates, pm_ct_data, by="week_ending")
 
-save(pm_ct_data, pm_ct_data_full, pm_cv_results, pm_diagnostics,
-     file = "./Data/Air Quality/pm kriging results.RData")
-write_xlsx(pm_diagnostics,
-           path="./Data/Air Quality/PM Kriging Diagnostics.xlsx")
+st_write(pm_ct_data_full, here::here("Data", "CT_PM.csv"),
+         layer_options = "GEOMETRY=AS_WKT", delete_dsn = T)
+write_csv(pm_cv_results, here::here("Data", "PM_Kriging_CV_Results.csv"))
+write_csv(pm_diagnostics, here::here("Data", "PM_Kriging_Diagnositics.csv"))
 
 #' ------------------------------------------------------------------------------
 #' Biweekly mean daily 8-hour max O3
