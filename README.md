@@ -13,14 +13,13 @@ Code uesd to generate the ENV, SOC, and CE indices used in the ECHO-wide study o
 The CEI combines data from several different sources. 
 For spatial data, the most recently available data were used.
 
-The file name suffix _AEA means that spatial data within that file (stored as 
-WKT) has been projected to Albers Equal Area conic and have units of meters
+The file name suffix _AEA means that spatial data within that file (stored as WKT) has been projected to Albers Equal Area conic and have units of meters
 
 Except for scripts numbered 00, scripts should be run in order.
 
-Data inputs are listed in the Data folder. All raw data are organized into
-folders within this directory. CSV files within the Data folder have been cleaned
-and are used in other scripts. 
+Data inputs are listed in the Data folder. All raw data are organized into folders within this directory. CSV files within the Data folder have been cleaned and are used in other scripts. 
+
+Script 03_Crime Statistics will need some work. When I did this analysis for Denver, I had point data from crimes and could aggregate to any spatial unit I liked. Crime data from the FBI is aggregated at the jurisdiction level. I have currently summarized to county level. There may be a way to get the jurisdiction shapefiles (typically municipality, but not always), however the current partial government shutdown is limiting my ability to find data on federal sites. I'll look into this further.
 
 
 ### Script Dictionary
