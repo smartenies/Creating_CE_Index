@@ -21,6 +21,8 @@ Data inputs are listed in the Data folder. All raw data are organized into folde
 
 Script 03_Crime Statistics will need some work. When I did this analysis for Denver, I had point data from crimes and could aggregate to any spatial unit I liked. Crime data from the FBI is aggregated at the jurisdiction level. I have currently summarized to county level. There may be a way to get the jurisdiction shapefiles (typically municipality, but not always), however the current partial government shutdown is limiting my ability to find data on federal sites. I'll look into this further.
 
+Also note that the crime data from ICPSR are provided as SAS datasets. I had to run their scripts in order to generate the .txt files used in script 03_Crime.
+
 
 ### Script Dictionary
 
